@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>رفع الواجب</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .container {
+      background: #1e293b;
+      border-radius: 16px;
+      padding: 40px;
+      width: 90%;
+      max-width: 500px;
+      box-shadow: 0 25px 50px rgba(0,0,0,0.4);
+    }
+    h1 { font-size: 1.5rem; margin-bottom: 8px; color: #60a5fa; }
+    p.sub { color: #94a3b8; margin-bottom: 28px; font-size: 0.9rem; }
+    .upload-area {
+      border: 2px dashed #334155;
+      border-radius: 12px;
+      padding: 32px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.3s;
+      margin-bottom: 20px;
+    }
+    .upload-area:hover { border-color: #60a5fa; background: #1e3a5f22; }
+    .upload-area input { display: none; }
+    .upload-icon { font-size: 2.5rem; margin-bottom: 12px; }
+    .file-info { margin-top: 12px; color: #60a5fa; font-size: 0.9rem; }
+    .btn {
+      width: 100%;
+      padding: 14px;
+      border: none;
+      border-radius: 10px;
+      background: #2563eb;
+      color: white;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: all 0.3s;
+      display: none;
+    }
+    .btn:hover { background: #1d4ed8; }
+    .btn:disabled { background: #334155; cursor: not-allowed; }
+    .btn.visible { display: block; }
+    .progress-wrap {
+      display: none;
+      margin-top: 20px;
+    }
+    .progress-wrap.show { display: block; }
+    .progress-bar {
+      background: #1e3a5f;
+      border-radius: 999px;
+      height: 10px;
+      overflow: hidden;
+      margin-bottom: 8px;
+    }
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #2563eb, #60a5fa);
+      border-radius: 999px;
+      width: 0%;
+      transition: width 0.3s;
+    }
+    .progress-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.8rem;
+      color: #94a3b8;
+    }
+    .status {
+      margin-top: 16px;
+      padding: 12px;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      display: none;
+    }
+    .status.show { display: block; }
+    .status.success { background: #14532d44; color: #4ade80; border: 1px solid #166534; }
+    .status.error { background: #7f1d1d44; color: #f87171; border: 1px solid #991b1b; }
+    #signInBtn {
+      width: 100%;
+      padding: 14px;
+      border: none;
+      border-radius: 10px;
+      background: #16a34a;
+      color: white;
+      font-size: 1rem;
+      cursor: pointer;
+      margin-bottom: 20px;
+    }
+    #signInBtn:hover { background: #15803d; }
+    #userInfo { color: #4ade80; font-size: 0.85rem; margin-bottom: 16px; display: none; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h1>📤 رفع الواجب</h1>
+  <p class="sub">يدعم الملفات الكبيرة حتى 5GB</p>
+
+  <button id="signInBtn">🔐 تسجيل الدخول بـ Google</button>
+  <div id="userInfo"></div>
+
+  <div class="upload-area" id="uploadArea">
+    <input type="file" id="fileInput" accept=".zip,.rar">
+    <div class="upload-icon">📁</div>
+    <div>اضغط لاختيار ملف ZIP أو RAR</div>
+    <div class="file-info" id="fileInfo"></div>
+  </div>
+
+  <button class="btn" id="startBtn">🚀 ابدأ الرفع</button>
+
+  <div class="progress-wrap" id="progressWrap">
+    <div class="progress-bar">
+      <div class="progress-fill" id="progressFill"></div>
+    </div>
+    <div class="progress-labels">
+      <span id="progressText">جاري الرفع...</span>
+      <span id="progressPct">0%</span>
+    </div>
+  </div>
+
+  <div class="status" id="statusMsg"></div>
+</div>
+
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script>
+  // ضع الـ Client ID هنا
+  const CLIENT_ID = '115845804063-r01h4ejekfvujl35f8bsn0fj814194g4.apps.googleusercontent.com
+';
+  const FOLDER_ID = '';  // اختياري: ID مجلد في Drive
+
+  const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB لكل قطعة
+
+  let accessToken = null;
+  let selectedFile = null;
+
+  const signInBtn = document.getElementById('signInBtn');
+  const userInfo = document.getElementById('userInfo');
+  const uploadArea = document.getElementById('uploadArea');
+  const fileInput = document.getElementById('fileInput');
+  const fileInfoEl = document.getElementById('fileInfo');
+  const startBtn = document.getElementById('startBtn');
+  const progressWrap = document.getElementById('progressWrap');
+  const progressFill = document.getElementById('progressFill');
+  const progressText = document.getElementById('progressText');
+  const progressPct = document.getElementById('progressPct');
+  const statusMsg = document.getElementById('statusMsg');
+
+  // تسجيل الدخول
+  signInBtn.addEventListener('click', () => {
+    const client = google.accounts.oauth2.initTokenClient({
+      client_id: CLIENT_ID,
+      scope: 'https://www.googleapis.com/auth/drive.file',
+      callback: (response) => {
+        if (response.access_token) {
+          accessToken = response.access_token;
+          signInBtn.style.display = 'none';
+          userInfo.style.display = 'block';
+          userInfo.textContent = '✅ تم تسجيل الدخول بنجاح';
+        }
+      }
+    });
+    client.requestAccessToken();
+  });
+
+  // اختيار ملف
+  uploadArea.addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', function() {
+    const file = this.files[0];
+    if (!file) return;
+    const name = file.name.toLowerCase();
+    if (!name.endsWith('.zip') && !name.endsWith('.rar')) {
+      showStatus('فقط ملفات ZIP و RAR مقبولة', 'error');
+      return;
+    }
+    selectedFile = file;
+    const mb = (file.size / 1048576).toFixed(1);
+    fileInfoEl.textContent = `${file.name} · ${mb} MB`;
+    startBtn.classList.add('visible');
+    hideStatus();
+  });
+
+  // بدء الرفع
+  startBtn.addEventListener('click', async () => {
+    if (!accessToken) { showStatus('سجّل الدخول أولاً', 'error'); return; }
+    if (!selectedFile) return;
+
+    startBtn.disabled = true;
+    progressWrap.classList.add('show');
+    hideStatus();
+
+    try {
+      await resumableUpload(selectedFile);
+      showStatus('✅ تم رفع الملف بنجاح إلى Google Drive!', 'success');
+      startBtn.textContent = '✓ تم!';
+      startBtn.style.background = '#15803d';
+    } catch (err) {
+      showStatus('❌ خطأ: ' + err.message, 'error');
+      startBtn.disabled = false;
+      startBtn.textContent = '🚀 ابدأ الرفع';
+    }
+  });
+
+  // Resumable Upload
+  async function resumableUpload(file) {
+    // الخطوة 1: احصل على Upload URL
+    const metadata = {
+      name: file.name,
+      mimeType: file.type || 'application/octet-stream',
+      ...(FOLDER_ID && { parents: [FOLDER_ID] })
+    };
+
+    const initRes = await fetch(
+      'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable',
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          'X-Upload-Content-Type': file.type || 'application/octet-stream',
+          'X-Upload-Content-Length': file.size
+        },
+        body: JSON.stringify(metadata)
+      }
+    );
+
+    if (!initRes.ok) throw new Error('فشل بدء الرفع');
+    const uploadUrl = initRes.headers.get('Location');
+
+    // الخطوة 2: رفع الملف chunk بـ chunk
+    let offset = 0;
+    while (offset < file.size) {
+      const chunk = file.slice(offset, offset + CHUNK_SIZE);
+      const end = Math.min(offset + CHUNK_SIZE, file.size) - 1;
+
+      const res = await fetch(uploadUrl, {
+        method: 'PUT',
+        headers: {
+          'Content-Range': `bytes ${offset}-${end}/${file.size}`,
+          'Content-Type': file.type || 'application/octet-stream'
+        },
+        body: chunk
+      });
+
+      if (res.status === 308) {
+        // قطعة وصلت، كمّل
+        const range = res.headers.get('Range');
+        offset = range ? parseInt(range.split('-')[1]) + 1 : offset + chunk.size;
+      } else if (res.ok) {
+        offset = file.size; // خلص
+      } else {
+        throw new Error(`فشل رفع القطعة عند ${offset}`);
+      }
+
+      // تحديث شريط التقدم
+      const pct = Math.round((Math.min(offset, file.size) / file.size) * 100);
+      progressFill.style.width = pct + '%';
+      progressPct.textContent = pct + '%';
+      progressText.textContent = `جاري الرفع... ${(offset/1048576).toFixed(0)} MB من ${(file.size/1048576).toFixed(0)} MB`;
+    }
+  }
+
+  function showStatus(msg, type) {
+    statusMsg.textContent = msg;
+    statusMsg.className = `status show ${type}`;
+  }
+  function hideStatus() {
+    statusMsg.className = 'status';
+  }
+</script>
+</body>
+</html>
