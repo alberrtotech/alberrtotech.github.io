@@ -1,1 +1,0 @@
-# alberrtotech.github.io
